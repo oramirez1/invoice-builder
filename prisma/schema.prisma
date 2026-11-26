@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  CANCELLED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String
+  passwordHash String
+  role         Role       @default(USER)
+  status       UserStatus @default(PENDING)
+  createdAt    DateTime   @default(now())
+  approvedAt   DateTime?
+
+  // Business profile (prefills new invoices)
+  companyName    String?
+  companyAddress String?
+  companyEmail   String?
+  companyPhone   String?
+  companyWebsite String?
+  taxId          String?
+  logoDataUrl    String?
+  defaultCurrency String  @default("CAD")
+  defaultTaxRate  Decimal @default(13) @db.Decimal(6, 3)
+  defaultTerms    String?
+  paymentDetails  String?
+  invoicePrefix   String  @default("INV-")
+  nextInvoiceNo   Int     @default(1)
+
+  invoices Invoice[]
+  clients  Client[]
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  email     String?
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, name])
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId    String        @default("blank")
+  number        String
+  title         String        @default("Invoice")
+  status        InvoiceStatus @default(DRAFT)
+  issueDate     DateTime
+  dueDate       DateTime?
+  poNumber      String?
+  currency      String        @default("CAD")
+
+  // Sender snapshot (so old invoices keep the details they were issued with)
+  fromName      String
+  fromAddress   String?
+  fromEmail     String?
+  fromPhone     String?
+  fromTaxId     String?
+  logoDataUrl   String?
+
+  // Bill to
+  toName        String
+  toAddress     String?
+  toEmail       String?
+  toPhone       String?
+
+  // Template-specific extra fields, e.g. project name, trip details
+  extraFields   Json          @default("{}")
+  columnLabels  Json          @default("{}")
+
+  taxLabel      String        @default("Tax")
+  taxRate       Decimal       @default(0) @db.Decimal(6, 3)
+  discountType  String        @default("percent") // percent | amount
+  discountValue Decimal       @default(0) @db.Decimal(12, 2)
+  shipping      Decimal       @default(0) @db.Decimal(12, 2)
+  amountPaid    Decimal       @default(0) @db.Decimal(12, 2)
+
+  subtotal      Decimal       @default(0) @db.Decimal(12, 2)
+  discountTotal Decimal       @default(0) @db.Decimal(12, 2)
+  taxTotal      Decimal       @default(0) @db.Decimal(12, 2)
+  total         Decimal       @default(0) @db.Decimal(12, 2)
+  balanceDue    Decimal       @default(0) @db.Decimal(12, 2)
+
+  notes         String?
+  terms         String?
+  paymentDetails String?
+
+  items         InvoiceItem[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([userId, number])
+  @@index([userId, issueDate])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position    Int
+  description String
+  details     String?
+  quantity    Decimal @db.Decimal(12, 3)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  taxable     Boolean @default(true)
+  amount      Decimal @db.Decimal(12, 2)
+}
